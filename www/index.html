@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101218">
+<title>TamaPoke</title>
+<style>
+  :root { --bg:#101218; --bezel:#1c1f29; --ring:#2b2f3d; --ink:#d8dcf0; --dim:#8a90a6; --accent:#e8503a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior:none; user-select:none; -webkit-user-select:none; }
+  body { display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:20px; padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom); }
+  #bezel { border-radius:50%; padding:10px; background:var(--bezel);
+    box-shadow: 0 0 0 2px var(--ring), 0 18px 50px rgba(0,0,0,.55), inset 0 2px 8px rgba(255,255,255,.04); }
+  #screen { display:block; border-radius:50%; touch-action:none; background:#000;
+    image-rendering: pixelated; image-rendering: crisp-edges; }
+  #nav { display:flex; gap:8px; flex-wrap:nowrap; }
+  #nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    font:inherit; font-size:12px; font-weight:600; color:var(--ink); background:var(--bezel);
+    border:1px solid var(--ring); border-radius:16px; width:84px; padding:8px 4px; min-height:56px;
+    cursor:pointer; white-space:nowrap; overflow:hidden; }
+  #nav button:active { background:var(--ring); }
+  #nav svg { width:20px; height:20px; flex:none; }
+  #info { position:fixed; right:12px; top: calc(env(safe-area-inset-top) + 12px); width:36px; height:36px;
+    border-radius:50%; border:1px solid var(--ring); background:var(--bezel); color:var(--dim);
+    font:600 16px/1 Georgia, serif; font-style:italic; }
+  #about { position:fixed; inset:0; background:rgba(8,9,12,.92); display:none; overflow:auto;
+    padding: calc(env(safe-area-inset-top) + 24px) 22px 32px; font-size:14px; line-height:1.55; color:#c9cde0; }
+  #about.open { display:block; }
+  #about h2 { margin:0 0 6px; font-size:20px; color:#fff; }
+  #about h3 { margin:20px 0 4px; font-size:15px; color:#fff; }
+  #about p { margin:6px 0; }
+  #about a { color:#8fc8ea; }
+  #about .close { margin-top:22px; font:inherit; font-weight:600; color:#fff; background:var(--accent);
+    border:0; border-radius:12px; padding:12px 20px; }
+</style>
+</head>
+<body>
+  <div id="bezel"><canvas id="screen" width="466" height="466"></canvas></div>
+  <nav id="nav">
+    <button id="nav-dex" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Pokédex</span></button>
+    <button id="nav-card" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="11" r="2.5"/><path d="M14 10h4M14 14h4M6 17c.8-1.6 2-2.4 3-2.4s2.2.8 3 2.4"/></svg><span>Fiche</span></button>
+    <button id="nav-walk" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="7.5" cy="8" rx="3" ry="4.5"/><ellipse cx="16.5" cy="14" rx="3" ry="4.5"/><path d="M6 15.5h3M15 21.5h3"/></svg><span>Balade</span></button>
+    <button id="nav-set" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>Réglages</span></button>
+  </nav>
+  <button id="info" type="button" aria-label="À propos">i</button>
+
+  <div id="about" role="dialog">
+    <h2>TamaPoke pour Android</h2>
+    <p>Portage du tamagotchi TamaPoke (firmware v1.17 pour ESP32-S3) en application Android. Mêmes règles et mêmes chiffres que la carte : une heure réelle = un niveau, la créature continue de vieillir appli fermée (jusqu'à 2 semaines).</p>
+    <h3>Gestes</h3>
+    <p>Bouton verre : faire boire (jauge EAU) · Balade (ou la pastille des pas en haut) : podomètre — en marchant, une jauge se remplit et des POKEMON sauvages apparaissent (3 en attente max). Combat : touche l'écran quand l'anneau entre dans la cible pour un coup parfait. Victoire = capture dans le Pokédex, et tu peux garder son œuf pour la prochaine éclosion.</p>
+    <p>Toucher l'œuf pour l'ouvrir · toucher la créature pour la caresser · glisser à gauche : Pokédex · glisser vers le haut : fiche (glisser à gauche/droite pour les 4 pages) · glisser vers le bas : heure, son, langue · appui long 3 s sur la créature : la relâcher · bouton retour : fermer l'écran en cours.</p>
+    <h3>Crédits et licences</h3>
+    <p>Jeu original : <b>TamaPoke</b> par Quique Tortosa — code sous licence MIT. <a href="https://github.com/socquique/TamaPoke">github.com/socquique/TamaPoke</a></p>
+    <p>Sprites : <b>PMD SpriteCollab</b> et ses artistes — CC BY-NC 4.0 (usage non commercial). <a href="https://github.com/PMDCollab/SpriteCollab">github.com/PMDCollab/SpriteCollab</a></p>
+    <p>Statistiques de base : PokéAPI. Police bitmap 5×7 : Adafruit GFX / Arduino_GFX.</p>
+    <p>Pokémon et les noms, personnages et designs associés sont des marques et © de Nintendo / Game Freak / The Pokémon Company. Projet de fan personnel, non commercial, ni affilié ni approuvé par ces sociétés. Ne pas vendre ni publier sur un store.</p>
+    <p id="ver" style="color:#8a90a6"></p>
+    <button class="close" type="button" id="about-close">Fermer</button>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="core.js"></script>
+  <script src="game.js"></script>
+  <script>
+    (function () {
+      var about = document.getElementById('about');
+      document.getElementById('info').addEventListener('click', function () { about.classList.add('open'); });
+      document.getElementById('about-close').addEventListener('click', function () { about.classList.remove('open'); });
+      document.getElementById('ver').textContent = 'Version ' + (window.TP ? window.TP.version : '');
+      var prevBack = window.tpBack;
+      window.tpBack = function () {
+        if (about.classList.contains('open')) { about.classList.remove('open'); return true; }
+        return prevBack();
+      };
+    })();
+  </script>
+</body>
+</html>
