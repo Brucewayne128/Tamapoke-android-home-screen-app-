@@ -47,12 +47,13 @@ jobs:
         run: |
           python3 tools/gen_dex.py
           python3 tools/sprites.py emit
+          python3 tools/gen_android_dex.py
 
       # dex.h y species.h llevan "GENERADO - no editar" en su cabecera; esto pilla
       # a quien edite la salida en vez del generador, o se olvide de regenerar
       # tras tocar los datos de origen.
       - name: Fail if regenerating produced a diff
-        run: git diff --exit-code -- dex.h species.h
+        run: git diff --exit-code -- dex.h species.h android/app/src/main/java/com/tamapoke/launcher/Dex.kt
 
   tools-lint:
     name: Lint tools/ (ruff)
@@ -89,3 +90,25 @@ jobs:
         with:
           python-version: "3.x"
       - run: python3 tools/test_i18n_formats.py
+
+  android:
+    name: Android launcher APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build
+        run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tamapoke-launcher-apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release.apk
