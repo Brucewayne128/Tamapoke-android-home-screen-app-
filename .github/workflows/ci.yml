@@ -10,7 +10,11 @@ jobs:
     name: Compile firmware
     runs-on: ubuntu-latest
     steps:
+      # arduino-cli wants the sketch folder named like the .ino (TamaPoke/),
+      # which a fork or renamed repo isn't.
       - uses: actions/checkout@v4
+        with:
+          path: TamaPoke
 
       - name: Install arduino-cli
         uses: arduino/setup-arduino-cli@v2
@@ -31,7 +35,7 @@ jobs:
         run: >
           arduino-cli compile --warnings=all
           --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB"
-          .
+          TamaPoke
 
   generated:
     name: Generated headers up to date
