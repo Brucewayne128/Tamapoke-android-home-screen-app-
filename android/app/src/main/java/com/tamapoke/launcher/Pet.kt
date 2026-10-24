@@ -317,6 +317,24 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
         save()
     }
 
+    /**
+     * What it says when you talk to it. Like in the anime, a Pokémon only ever
+     * says its own name (or a piece of it); the tone follows its mood.
+     */
+    fun reply(): String {
+        if (isEgg) return "..."
+        val name = spokenName(Dex[speciesId].name)
+        val short = Regex("^[^aeiouy]*[aeiouy]+[^aeiouy]?", RegexOption.IGNORE_CASE)
+            .find(name)?.value?.takeIf { it.length in 2 until name.length && it.all(Char::isLetter) } ?: name
+        val options = when {
+            sleeping -> listOf("$short... $short...", "$name...", "...$short...")
+            lowestStat < 25 -> listOf("$name...", "$short... $short...", "$name?")
+            showHeart || joy >= 70 -> listOf("$name!", "$short, $short!", "$short! $name!", "${name.uppercase()}!!", "$name ♪")
+            else -> listOf("$name!", "$name?", "$short?", "$short, $name!")
+        }
+        return options.random(rnd)
+    }
+
     private fun heart() {
         heartUntil = SystemClock.elapsedRealtime() + HEART_MS
     }
@@ -373,6 +391,13 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
         const val EVOLVE_ANIM_MS = 5200L
 
         private fun clamp(v: Int) = v.coerceIn(0, 100)
+
+        /** "NIDORAN H" -> "Nidoran", "MR. MIME" -> "Mr. Mime" */
+        fun spokenName(display: String): String =
+            display.removeSuffix(" H").removeSuffix(" M")
+                .lowercase()
+                .split(' ')
+                .joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
 
         /** drop by d but never below the floor fl (and leave values already under it alone) */
         private fun dropTo(v: Int, d: Int, fl: Int): Int {

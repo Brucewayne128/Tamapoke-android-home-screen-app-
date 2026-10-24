@@ -2,6 +2,7 @@ package com.tamapoke.launcher
 
 import android.app.Application
 import android.content.Context
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,21 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         if (pet.update()) changed()
     }
 
+    /** What the pet is saying right now, shown in a speech bubble until [speechUntil]. */
+    var speech by mutableStateOf<String?>(null)
+        private set
+    var speechUntil = 0L
+        private set
+
+    /** You typed something to the pet: it answers (with its name) and enjoys the attention. */
+    fun talk(message: String) {
+        if (message.isBlank() || pet.awaitingStarter) return
+        pet.caress()  // being talked to is like a pat: +joy, a heart and a hop
+        speech = pet.reply()
+        speechUntil = SystemClock.elapsedRealtime() + SPEECH_MS
+        changed()
+    }
+
     fun onHomePressed() {
         homePressed++
     }
@@ -79,5 +95,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             apps = withContext(Dispatchers.IO) { Apps.load(ctx, iconPx) }
         }
+    }
+
+    companion object {
+        const val SPEECH_MS = 3500L
     }
 }

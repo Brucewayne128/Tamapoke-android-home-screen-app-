@@ -39,14 +39,12 @@ android {
     // (tools/sdcard/mons). They are copied in at build time rather than
     // duplicated in the repo.
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/spriteAssets"))
-    androidResources {
-        noCompress += "bin"
-    }
 }
 
 val copySprites by tasks.registering(Copy::class) {
     from(rootProject.file("../tools/sdcard/mons")) {
-        include("p[0-9]*.bin", "ps[0-9]*.bin")
+        // Gradle patterns only know * and ?, so no [0-9]: p*.bin covers pNNN and psNNN
+        include("p*.bin")
     }
     into(layout.buildDirectory.dir("generated/spriteAssets/mons"))
 }

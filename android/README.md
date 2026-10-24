@@ -1,9 +1,11 @@
 # TamaPoke Home (Android launcher)
 
 An Android home-screen app with your TamaPoke living on it. It replaces the
-default launcher and stacks three things:
+default launcher and stacks four things:
 
-1. **Clock and date** at the top (tap to open your alarms).
+1. **A small top row** in place of the phone's status bar: time and date on the
+   left (tap for alarms), battery on the right. Swipe down from the top for
+   notifications.
 2. **The pet window**: your Pokémon walks around a little scene that follows
    the time of day. It uses the same animated sprites as the board
    (`tools/sdcard/mons`) and the same care rules as the firmware (`pet.cpp`).
@@ -11,7 +13,9 @@ default launcher and stacks three things:
      **Bath**, **Sleep/Wake**. Tap the pet to pet it, tap the egg to hatch it.
    - +1 level per real hour; when it is ready to evolve a button appears.
    - Long-press its name to release it and get a new egg.
-3. **Your apps** in a searchable grid. Tap to open, long-press for app info.
+3. **Talk to your Pokémon**: type a message and it answers in a speech bubble.
+   Like in the anime it only ever says its own name.
+4. **Your apps** in a grid. Tap to open, long-press for app info.
    Pressing Home brings you back here.
 
 Time spent in other apps is applied when you come back, the same way the board

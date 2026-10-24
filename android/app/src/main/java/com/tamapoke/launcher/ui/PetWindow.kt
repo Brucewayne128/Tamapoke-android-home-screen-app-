@@ -28,6 +28,7 @@ import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
@@ -35,6 +36,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +46,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -55,6 +59,7 @@ import com.tamapoke.launcher.PmdSprite
 import com.tamapoke.launcher.SpriteAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import android.os.SystemClock
 import java.util.Calendar
 import kotlin.math.abs
 import kotlin.math.floor
@@ -115,10 +120,17 @@ fun PetWindow(
 
             repeat(pet.poops.coerceAtMost(POOP_X.size)) { i -> drawPoop(size.width * POOP_X[i], groundY) }
             if (pet.sleeping) drawRect(Color(0xFF050818).copy(alpha = 0.5f))  // lights off
+            var bubbleX = size.width / 2
+            var bubbleY = groundY - 70 * density
             if (pet.isEgg) {
                 if (!pet.awaitingStarter) drawEgg(t, groundY, pet.eggTaps)
             } else {
-                drawPet(vm, motion, t, groundY, text)
+                bubbleX = size.width * motion.x
+                bubbleY = drawPet(vm, motion, t, groundY, text)
+            }
+            val said = vm.speech
+            if (said != null && SystemClock.elapsedRealtime() < vm.speechUntil) {
+                drawBubble(text, said, bubbleX, bubbleY)
             }
         }
 
@@ -162,12 +174,18 @@ private fun DrawScope.drawPet(
     t: Long,
     groundY: Float,
     text: androidx.compose.ui.text.TextMeasurer,
-) {
+): Float {
     val pet = vm.pet
-    val sprite = vm.sprite ?: return
+    val cx = size.width * m.x
+    val sprite = vm.sprite
+    if (sprite == null) {
+        // sprite not loaded (yet): never leave the window empty
+        val px = 4f * density
+        drawPixels(POKEBALL, cx - 6 * px, groundY - 12 * px, px)
+        return groundY - 12 * px
+    }
     val idle = sprite.get(Act.IDLE)
     val scale = floor(size.height * 0.5f / idle.h).coerceIn(1f, 6f)
-    val cx = size.width * m.x
 
     if (pet.evolving) {
         // flicker between the old and the new silhouette, faster and faster
@@ -179,7 +197,7 @@ private fun DrawScope.drawPet(
         val act = s.get(Act.IDLE)
         drawRect(Color.White.copy(alpha = 0.25f + 0.5f * e * e))
         drawAction(act, t, cx, groundY, scale, ColorFilter.tint(Color.White, BlendMode.SrcIn).takeIf { e < 0.92f })
-        return
+        return groundY - act.base * scale
     }
 
     val act = when {
@@ -208,6 +226,41 @@ private fun DrawScope.drawPet(
             style = TextStyle(color = Color(0xFFFFCB05), fontSize = 20.sp, fontWeight = FontWeight.Bold),
         )
     }
+    return headY
+}
+
+/** A comic speech bubble whose tail points down at (x, bottomY), kept inside the window. */
+private fun DrawScope.drawBubble(
+    text: androidx.compose.ui.text.TextMeasurer,
+    said: String,
+    x: Float,
+    bottomY: Float,
+) {
+    val layout = text.measure(
+        said,
+        style = TextStyle(color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.Bold),
+        constraints = Constraints(maxWidth = (size.width * 0.8f).toInt()),
+    )
+    val pad = 8 * density
+    val tail = 8 * density
+    val w = layout.size.width + 2 * pad
+    val h = layout.size.height + 2 * pad
+    val left = (x - w / 2).coerceIn(4 * density, size.width - w - 4 * density)
+    val top = (bottomY - tail - h).coerceAtLeast(4 * density)
+    val tipX = x.coerceIn(left + 2 * tail, left + w - 2 * tail)
+    val tip = Path().apply {
+        moveTo(tipX - tail, top + h - 1)
+        lineTo(tipX + tail, top + h - 1)
+        lineTo(tipX, top + h + tail)
+        close()
+    }
+    val outline = Color(0xFF1A1A1A)
+    drawRoundRect(outline, Offset(left - 2 * density, top - 2 * density),
+        Size(w + 4 * density, h + 4 * density), CornerRadius(14 * density))
+    drawPath(tip, outline, style = Stroke(width = 4 * density))
+    drawRoundRect(Color.White, Offset(left, top), Size(w, h), CornerRadius(12 * density))
+    drawPath(tip, Color.White)
+    drawText(layout, topLeft = Offset(left + pad, top + pad))
 }
 
 private fun DrawScope.drawAction(
@@ -299,6 +352,20 @@ private val HEART = arrayOf(
     ".krrrk.",
     "..krk..",
     "...k...",
+)
+
+private val POKEBALL = arrayOf(
+    "....kkkk....",
+    "..kkrrrrkk..",
+    ".krrrrrrrrk.",
+    ".krrrrrrrrk.",
+    "krrrrkkrrrrk",
+    "kkkkkwwkkkkk",
+    "kwwwwkkwwwwk",
+    ".kwwwwwwwwk.",
+    ".kwwwwwwwwk.",
+    "..kkwwwwkk..",
+    "....kkkk....",
 )
 
 private val POOP = arrayOf(

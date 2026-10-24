@@ -1,12 +1,17 @@
 package com.tamapoke.launcher.ui
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.provider.AlarmClock
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,8 +48,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,10 +69,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tamapoke.launcher.AppEntry
 import com.tamapoke.launcher.Apps
 import com.tamapoke.launcher.Dex
 import com.tamapoke.launcher.LauncherViewModel
+import com.tamapoke.launcher.Pet
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import java.util.Date
 
@@ -73,7 +82,7 @@ val Panel = Color(0xFF1C1C22)
 
 @Composable
 fun LauncherScreen(vm: LauncherViewModel) {
-    MaterialTheme(colorScheme = darkColorScheme(primary = PokeRed, surface = Panel)) {
+    MaterialTheme(colorScheme = darkColorScheme(primary = PokeRed, onPrimary = Color.White, surface = Panel)) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -81,18 +90,22 @@ fun LauncherScreen(vm: LauncherViewModel) {
                 .systemBarsPadding()
                 .padding(horizontal = 12.dp),
         ) {
-            ClockHeader()
+            StatusRow()
+            Spacer(Modifier.height(6.dp))
             PetSection(vm)
             Spacer(Modifier.height(10.dp))
-            AppDrawer(vm, Modifier.weight(1f))
+            TalkBar(vm)
+            Spacer(Modifier.height(6.dp))
+            AppGrid(vm, Modifier.weight(1f))
         }
     }
 }
 
-// ---------------------------------------------------------------- clock
+// ---------------------------------------------------------------- status row
 
+/** Small top row in place of the system status bar: time + date on the left, battery on the right. */
 @Composable
-private fun ClockHeader() {
+private fun StatusRow() {
     val context = LocalContext.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -103,23 +116,98 @@ private fun ClockHeader() {
     }
     val pattern = if (DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm"
     val time = DateFormat.format(pattern, now).toString()
-    val date = DateFormat.format("EEEE, d MMMM", Date(now)).toString()
+    val date = DateFormat.format("EEE d MMM", Date(now)).toString()
 
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
-            .clickable {
+            .padding(top = 6.dp, start = 4.dp, end = 4.dp)
+            .height(24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clickable {
                 runCatching {
                     context.startActivity(
                         Intent(AlarmClock.ACTION_SHOW_ALARMS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     )
                 }
-            }
-            .padding(top = 12.dp, bottom = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(time, fontSize = 64.sp, fontWeight = FontWeight.Light, color = Color.White)
-        Text(date.replaceFirstChar { it.uppercase() }, fontSize = 16.sp, color = Color(0xFFB0B0B8))
+            },
+        ) {
+            Text(time, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            Spacer(Modifier.width(8.dp))
+            Text(date, fontSize = 12.sp, color = Color(0xFFB0B0B8))
+        }
+        Spacer(Modifier.weight(1f))
+        BatteryIndicator()
+    }
+}
+
+/** Battery percentage drawn inside a battery outline, so it is obvious what the number is. */
+@Composable
+private fun BatteryIndicator() {
+    val context = LocalContext.current
+    var level by remember { mutableIntStateOf(-1) }
+    var charging by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        fun read(i: Intent?) {
+            if (i == null) return
+            val l = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+            if (l >= 0 && scale > 0) level = l * 100 / scale
+            val status = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+            charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) = read(i)
+        }
+        // battery broadcasts are sticky: registering hands back the current state at once
+        read(
+            ContextCompat.registerReceiver(
+                context, receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED,
+            ),
+        )
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    if (level < 0) return
+
+    val fill = when {
+        charging -> Color(0xFF4CAF50)
+        level <= 15 -> PokeRed
+        else -> Color(0xFF6B6B75)
+    }
+    val outline = Color(0xFFE0E0E6)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(width = 38.dp, height = 18.dp)
+                .border(1.5.dp, outline, RoundedCornerShape(4.dp))
+                .padding(2.5.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            // the charge level, as a bar behind the number
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .fillMaxWidth(level / 100f)
+                    .background(fill, RoundedCornerShape(2.dp)),
+            )
+            Text(
+                (if (charging) "⚡" else "") + level,
+                fontSize = 10.sp,
+                lineHeight = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+            )
+        }
+        // the battery's terminal nub
+        Box(
+            Modifier
+                .size(width = 2.5.dp, height = 7.dp)
+                .background(outline, RoundedCornerShape(topEnd = 1.5.dp, bottomEnd = 1.5.dp)),
+        )
     }
 }
 
@@ -150,7 +238,7 @@ private fun PetSection(vm: LauncherViewModel) {
                 }
             },
             onPickStarter = { dex -> vm.act { chooseStarter(dex) } },
-            modifier = Modifier.fillMaxWidth().height(200.dp),
+            modifier = Modifier.fillMaxWidth().height(230.dp),
         )
         Spacer(Modifier.height(8.dp))
 
@@ -286,79 +374,93 @@ private fun ActionButton(label: String, enabled: Boolean, modifier: Modifier, on
     ) { Text(label, fontSize = 13.sp, maxLines = 1) }
 }
 
+// ---------------------------------------------------------------- talk
+
+/** Type a message to your Pokémon; it answers in a speech bubble (with its name, of course). */
+@Composable
+private fun TalkBar(vm: LauncherViewModel) {
+    @Suppress("UNUSED_VARIABLE") val rev = vm.rev
+    val pet = vm.pet
+    val focus = LocalFocusManager.current
+    var message by remember { mutableStateOf("") }
+
+    LaunchedEffect(vm.homePressed) {
+        message = ""
+        focus.clearFocus()
+    }
+    BackHandler(enabled = message.isNotEmpty()) { message = ""; focus.clearFocus() }
+
+    val send: () -> Unit = {
+        if (message.isNotBlank()) {
+            vm.talk(message)
+            message = ""
+            focus.clearFocus()  // hide the keyboard so you can see the answer
+        }
+    }
+    val who = if (pet.isEgg) "your egg" else Pet.spokenName(pet.name)
+
+    OutlinedTextField(
+        value = message,
+        onValueChange = { message = it },
+        placeholder = { Text("Talk to $who…") },
+        singleLine = true,
+        enabled = !pet.awaitingStarter,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+        keyboardActions = KeyboardActions(onSend = { send() }),
+        trailingIcon = {
+            TextButton(onClick = { send() }, enabled = message.isNotBlank()) { Text("Send") }
+        },
+        shape = RoundedCornerShape(16.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            unfocusedBorderColor = Color(0xFF33333B),
+            focusedBorderColor = PokeRed,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
 // ---------------------------------------------------------------- apps
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AppDrawer(vm: LauncherViewModel, modifier: Modifier) {
+private fun AppGrid(vm: LauncherViewModel, modifier: Modifier) {
     val context = LocalContext.current
-    val focus = LocalFocusManager.current
-    var query by remember { mutableStateOf("") }
     val grid = rememberLazyGridState()
+    LaunchedEffect(vm.homePressed) { grid.scrollToItem(0) }
 
-    LaunchedEffect(vm.homePressed) {
-        query = ""
-        focus.clearFocus()
-        grid.scrollToItem(0)
-    }
-    BackHandler(enabled = query.isNotEmpty()) { query = ""; focus.clearFocus() }
-
-    val shown: List<AppEntry> = remember(vm.apps, query) {
-        if (query.isBlank()) vm.apps else vm.apps.filter { it.label.contains(query.trim(), ignoreCase = true) }
-    }
-
-    Column(modifier) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Search apps") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-            keyboardActions = KeyboardActions(
-                onGo = { shown.firstOrNull()?.let { Apps.launch(context, it) }; query = ""; focus.clearFocus() },
-            ),
-            shape = RoundedCornerShape(16.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = Color(0xFF33333B),
-                focusedBorderColor = PokeRed,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(6.dp))
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(4),
-            state = grid,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 8.dp),
-        ) {
-            items(shown, key = { it.component.flattenToString() }) { app ->
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .combinedClickable(
-                            onClick = { Apps.launch(context, app); query = ""; focus.clearFocus() },
-                            onLongClick = { Apps.openInfo(context, app) },
-                        )
-                        .padding(vertical = 6.dp),
-                ) {
-                    Image(
-                        bitmap = app.icon,
-                        contentDescription = app.label,
-                        filterQuality = FilterQuality.Medium,
-                        modifier = Modifier.size(48.dp),
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(4),
+        state = grid,
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 8.dp),
+    ) {
+        items(vm.apps, key = { it.component.flattenToString() }) { app ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .padding(4.dp)
+                    .combinedClickable(
+                        onClick = { Apps.launch(context, app) },
+                        onLongClick = { Apps.openInfo(context, app) },
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        app.label,
-                        fontSize = 11.sp,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.width(72.dp),
-                    )
-                }
+                    .padding(vertical = 6.dp),
+            ) {
+                Image(
+                    bitmap = app.icon,
+                    contentDescription = app.label,
+                    filterQuality = FilterQuality.Medium,
+                    modifier = Modifier.size(48.dp),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    app.label,
+                    fontSize = 11.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(72.dp),
+                )
             }
         }
     }

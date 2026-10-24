@@ -110,6 +110,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build
         run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug
+      - name: Check the sprites made it into the APK
+        run: |
+          n=$(unzip -l app/build/outputs/apk/release/app-release.apk | grep -c 'assets/mons/p.*\.bin')
+          echo "$n sprite files in the APK"
+          test "$n" -ge 300
       - uses: actions/upload-artifact@v4
         with:
           name: tamapoke-launcher-apk
