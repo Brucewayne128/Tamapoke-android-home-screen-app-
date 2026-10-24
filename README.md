@@ -20,6 +20,12 @@ and complete them all (shinies included).
 
 🔴 **3D-printed Pokéball case + print profiles → [on MakerWorld](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)** · flash it in your browser → **[web installer](https://socquique.github.io/TamaPoke/web/)**
 
+## Android home-screen app
+
+There is also an **Android launcher** in [`android/`](android/README.md) that
+puts your TamaPoke on your phone's home screen, above a clock and your app
+grid. Same sprites, same care rules. The APK is built by CI on every push.
+
 ## Status
 
 Running on hardware. Implemented: the 151 + shinies animated from microSD, full
