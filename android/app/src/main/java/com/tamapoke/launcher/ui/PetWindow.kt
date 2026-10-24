@@ -176,16 +176,22 @@ private fun DrawScope.drawPet(
     text: androidx.compose.ui.text.TextMeasurer,
 ): Float {
     val pet = vm.pet
-    val cx = size.width * m.x
     val sprite = vm.sprite
     if (sprite == null) {
         // sprite not loaded (yet): never leave the window empty
         val px = 4f * density
-        drawPixels(POKEBALL, cx - 6 * px, groundY - 12 * px, px)
+        drawPixels(POKEBALL, size.width * m.x - 6 * px, groundY - 12 * px, px)
         return groundY - 12 * px
     }
     val idle = sprite.get(Act.IDLE)
-    val scale = floor(size.height * 0.5f / idle.h).coerceIn(1f, 6f)
+    // twice the old size, but never so big that its head leaves the window
+    val scale = minOf(
+        floor(size.height * 0.5f / idle.h).coerceIn(1f, 6f) * 2,
+        floor(groundY * 0.95f / idle.base),
+    ).coerceAtLeast(1f)
+    // keep the (now bigger) sprite inside the window at the edges of its walk
+    val half = (idle.w * scale / 2 * 0.6f).coerceAtMost(size.width / 2)
+    val cx = (size.width * m.x).coerceIn(half, size.width - half)
 
     if (pet.evolving) {
         // flicker between the old and the new silhouette, faster and faster

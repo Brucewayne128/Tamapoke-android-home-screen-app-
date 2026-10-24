@@ -274,8 +274,9 @@ private fun PetSection(vm: LauncherViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatBar("FOOD", pet.fullness, Color(0xFFF2A93B), Modifier.weight(1f))
                 StatBar("JOY", pet.joy, Color(0xFFF06292), Modifier.weight(1f))
-                StatBar("ENE", pet.energy, Color(0xFF64B5F6), Modifier.weight(1f))
+                // same order as the buttons below: Feed, Play, Bath, Sleep
                 StatBar("HYG", pet.hygiene, Color(0xFF81C784), Modifier.weight(1f))
+                StatBar("ENE", pet.energy, Color(0xFF64B5F6), Modifier.weight(1f))
             }
             Spacer(Modifier.height(8.dp))
             Controls(vm, onEvolve = { askEvolve = true })
@@ -330,7 +331,7 @@ private fun Controls(vm: LauncherViewModel, onEvolve: () -> Unit) {
     var feedMenu by remember { mutableStateOf(false) }
     val awake = !pet.sleeping
 
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         Box(Modifier.weight(1f)) {
             ActionButton("Feed", enabled = awake, modifier = Modifier.fillMaxWidth()) { feedMenu = true }
             DropdownMenu(expanded = feedMenu, onDismissRequest = { feedMenu = false }) {
@@ -434,7 +435,7 @@ private fun AppGrid(vm: LauncherViewModel, modifier: Modifier) {
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 8.dp),
     ) {
-        items(vm.apps, key = { it.component.flattenToString() }) { app ->
+        items(vm.apps, key = { it.key }) { app ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier

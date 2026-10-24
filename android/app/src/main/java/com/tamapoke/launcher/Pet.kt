@@ -37,6 +37,7 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
     private var mistakeCooldown = 0
     private var lastTickMs = 0L      // wall clock of the last applied tick
     private var evoDeclinedLv = 0
+    private var lastRestMs = 0L      // sleep energy refill, in 10 s steps (not saved)
     private val registered = HashSet<Int>()
 
     // animation timers (elapsedRealtime deadlines, not persisted)
@@ -84,13 +85,40 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
             lastTickMs = nowMs
             return false
         }
+        val rested = rest(nowMs)
         val mins = (nowMs - lastTickMs) / TICK_MS
-        if (mins <= 0) return false
+        if (mins <= 0) {
+            if (rested) save()
+            return rested
+        }
         lastTickMs += mins * TICK_MS
         if (awaitingStarter) return false  // time doesn't run until a starter is chosen
-        if (mins >= 2) catchUp(minOf(mins, 14L * 24 * 60)) else tick()
+        if (mins >= 2) {
+            catchUp(minOf(mins, 14L * 24 * 60))
+            lastRestMs = nowMs  // the catch-up already gave the sleep energy
+        } else {
+            tick()
+        }
         save()
         return true
+    }
+
+    /**
+     * Sleeping refills energy +1 every 10 s (the firmware's +6 per minute), so the
+     * bar visibly fills while you watch instead of jumping once a minute.
+     */
+    private fun rest(nowMs: Long): Boolean {
+        if (!sleeping || isEgg || lastRestMs == 0L || nowMs < lastRestMs) {
+            lastRestMs = nowMs
+            return false
+        }
+        val steps = (nowMs - lastRestMs) / REST_STEP_MS
+        if (steps <= 0) return false
+        lastRestMs += steps * REST_STEP_MS
+        if (steps > 12) return false  // long gap: update() applies it as a catch-up
+        val before = energy
+        energy = clamp(energy + steps.toInt())
+        return energy != before
     }
 
     private fun tick() {
@@ -100,8 +128,7 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
             if (ageMinutes >= 3) hatch()  // hatches on its own after 3 minutes
             return
         }
-        if (sleeping) {  // rest: energy comes back, needs drop ~4x slower with floors
-            energy = clamp(energy + 6)
+        if (sleeping) {  // rest: energy comes back (see rest()), needs drop ~4x slower with floors
             if (weight > 0 && ageMinutes % 3 == 0L) weight--
             if (ageMinutes % 2 == 0L) {
                 fullness = dropTo(fullness, 1, 30)
@@ -306,6 +333,7 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
     fun toggleSleep() {
         if (isEgg) return
         sleeping = !sleeping
+        lastRestMs = System.currentTimeMillis()
         save()
     }
 
@@ -385,6 +413,7 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
 
     companion object {
         const val TICK_MS = 60_000L
+        const val REST_STEP_MS = 10_000L
         const val MINUTES_PER_LEVEL = 60
         const val EAT_ANIM_MS = 2500L
         const val HEART_MS = 1500L
