@@ -11,16 +11,20 @@ default launcher and stacks four things:
    (`tools/sdcard/mons`) and the same care rules as the firmware (`pet.cpp`).
    - **Feed** (three berries, one is its secret favourite, or candy), **Play**,
      **Bath**, **Sleep/Wake**. Tap the pet to pet it, tap the egg to hatch it.
+   - FOOD empties in an hour; ENE drains slowly and 5 minutes of sleep refill
+     it, then it wakes up by itself.
    - +1 level per real hour; when it is ready to evolve a button appears.
+   - Notifications when it wakes up, gets hungry, or feels lonely (15 minutes
+     without any care), even while you are in other apps.
    - Long-press its name to release it and get a new egg.
 3. **Talk to your Pokémon**: type a message and it answers in a speech bubble.
    Like in the anime it only ever says its own name.
 4. **Your apps** in a grid. Tap to open, long-press for app info.
    Pressing Home brings you back here.
 
-Time spent in other apps is applied when you come back, the same way the board
-catches up after being off: stats drop but stop at 15, and no care mistakes
-are counted while you are away.
+Time spent in other apps runs by the same clock (no care mistakes are counted
+while you are away), and a background alarm checks on the pet so the
+notifications arrive on time.
 
 Not ported yet: medals, streak, battle stats, minigames, farewell/runaway.
 

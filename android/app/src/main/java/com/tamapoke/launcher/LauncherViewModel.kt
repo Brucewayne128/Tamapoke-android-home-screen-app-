@@ -1,7 +1,6 @@
 package com.tamapoke.launcher
 
 import android.app.Application
-import android.content.Context
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -14,7 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class LauncherViewModel(app: Application) : AndroidViewModel(app) {
-    val pet = Pet(app.getSharedPreferences("pet", Context.MODE_PRIVATE))
+    val pet = PetStore.get(app)
 
     /** Bumped after every pet change so Compose re-reads the pet's fields. */
     var rev by mutableIntStateOf(0)
@@ -45,6 +44,14 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     /** Called every second while the home screen is visible. */
     fun tick() {
         if (pet.update()) changed()
+        PetAlerts.postEvents(getApplication(), pet)
+    }
+
+    /** Back on the home screen: the background alarm may have moved the pet on. */
+    fun onShown() {
+        pet.update()
+        PetAlerts.postEvents(getApplication(), pet)
+        changed()
     }
 
     /** What the pet is saying right now, shown in a speech bubble until [speechUntil]. */

@@ -6,10 +6,10 @@ import kotlin.random.Random
 
 /**
  * The TamaPoke pet, ported from the firmware (pet.cpp) with the same numbers:
- * 1 tick = 1 real minute, +1 level per hour, the same drains, actions, sleep
- * and evolution rules. Time spent away from the home screen is applied like
- * the board's "powered off" catch-up: needs drop with a floor of 15 and no
- * care mistakes, capped at two weeks.
+ * 1 tick = 1 real minute, +1 level per hour, the same actions and evolution
+ * rules. Tuned for a phone: FOOD empties in an hour, ENE drains 1 every 2
+ * minutes, 5 minutes of sleep refill ENE and then it wakes up. Time away from
+ * the home screen runs by the same clock (no care mistakes), capped at two weeks.
  *
  * Left out for now: medals, streak, battle stats, minigames, farewell/runaway
  * ceremonies.
@@ -37,7 +37,10 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
     private var mistakeCooldown = 0
     private var lastTickMs = 0L      // wall clock of the last applied tick
     private var evoDeclinedLv = 0
-    private var lastRestMs = 0L      // sleep energy refill, in 10 s steps (not saved)
+    private var lastRestMs = 0L      // sleep energy refill, in 3 s steps (not saved)
+    private var lastInteractionMs = System.currentTimeMillis()
+    private var lonelyNotified = false
+    private var hungryNotified = false
     private val registered = HashSet<Int>()
 
     // animation timers (elapsedRealtime deadlines, not persisted)
@@ -79,33 +82,34 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
 
     // ---- time ----
 
-    /** Applies the minutes elapsed since the last tick. Call often (e.g. every second). */
+    /** Applies the time elapsed since the last tick. Call often (e.g. every second). */
     fun update(nowMs: Long = System.currentTimeMillis()): Boolean {
         if (lastTickMs == 0L || nowMs < lastTickMs) {  // first run, or the clock went back
             lastTickMs = nowMs
             return false
         }
-        val rested = rest(nowMs)
+        var changed = rest(nowMs)
         val mins = (nowMs - lastTickMs) / TICK_MS
-        if (mins <= 0) {
-            if (rested) save()
-            return rested
+        if (mins > 0) {
+            lastTickMs += mins * TICK_MS
+            if (!awaitingStarter) {  // time doesn't run until a starter is chosen
+                if (mins >= 2) {
+                    catchUp(minOf(mins, 14L * 24 * 60), nowMs)
+                    lastRestMs = nowMs  // the catch-up already gave the sleep energy
+                } else {
+                    tick()
+                }
+                changed = true
+            }
         }
-        lastTickMs += mins * TICK_MS
-        if (awaitingStarter) return false  // time doesn't run until a starter is chosen
-        if (mins >= 2) {
-            catchUp(minOf(mins, 14L * 24 * 60))
-            lastRestMs = nowMs  // the catch-up already gave the sleep energy
-        } else {
-            tick()
-        }
-        save()
-        return true
+        if (checkAlerts(nowMs)) changed = true
+        if (changed) save()
+        return changed
     }
 
     /**
-     * Sleeping refills energy +1 every 10 s (the firmware's +6 per minute), so the
-     * bar visibly fills while you watch instead of jumping once a minute.
+     * Sleeping refills energy +1 every 3 s, so an empty bar is full after 5 minutes
+     * and you can watch it fill. When it is full the pet wakes up by itself.
      */
     private fun rest(nowMs: Long): Boolean {
         if (!sleeping || isEgg || lastRestMs == 0L || nowMs < lastRestMs) {
@@ -115,10 +119,42 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
         val steps = (nowMs - lastRestMs) / REST_STEP_MS
         if (steps <= 0) return false
         lastRestMs += steps * REST_STEP_MS
-        if (steps > 12) return false  // long gap: update() applies it as a catch-up
-        val before = energy
+        if (steps > 40) return false  // gap over 2 min: update() applies it as a catch-up
         energy = clamp(energy + steps.toInt())
-        return energy != before
+        if (energy >= 100) wakeUp(nowMs)
+        return true
+    }
+
+    private fun wakeUp(nowMs: Long) {
+        sleeping = false
+        lastInteractionMs = nowMs  // fresh from a nap: give it a while before it feels lonely
+        lonelyNotified = false
+        events.add(Event.WOKE_UP)
+    }
+
+    /** One awake minute: FOOD empties in an hour, ENE drains 1 every 2 minutes. */
+    private fun awakeDrain() {
+        fullness = clamp(fullness - if (ageMinutes % 3 == 0L) 1 else 2)  // 5 per 3 min
+        if (ageMinutes % 2 == 0L) {
+            energy = clamp(energy - 1)
+            if (weight > 50) energy = clamp(energy - 1)  // overweight = sluggish
+        }
+        hygiene = clamp(hygiene - 1 - 4 * poops)
+        if (weight > 0 && ageMinutes % 3 == 0L) weight--
+        var dJoy = -1
+        if (fullness < 30) dJoy -= 2
+        if (hygiene < 30) dJoy -= 2
+        joy = clamp(joy + dJoy)
+    }
+
+    /** One sleeping minute: needs drop ~4x slower and never below a floor. */
+    private fun sleepDrain() {
+        if (weight > 0 && ageMinutes % 3 == 0L) weight--
+        if (ageMinutes % 2 == 0L) {
+            fullness = dropTo(fullness, 1, 30)
+            joy = dropTo(joy, 1, 35)
+        }
+        if (ageMinutes % 3 == 0L) hygiene = dropTo(hygiene, 1, 45)
     }
 
     private fun tick() {
@@ -128,26 +164,12 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
             if (ageMinutes >= 3) hatch()  // hatches on its own after 3 minutes
             return
         }
-        if (sleeping) {  // rest: energy comes back (see rest()), needs drop ~4x slower with floors
-            if (weight > 0 && ageMinutes % 3 == 0L) weight--
-            if (ageMinutes % 2 == 0L) {
-                fullness = dropTo(fullness, 1, 30)
-                joy = dropTo(joy, 1, 35)
-            }
-            if (ageMinutes % 3 == 0L) hygiene = dropTo(hygiene, 1, 45)
+        if (sleeping) {  // energy comes back in rest()
+            sleepDrain()
             return
         }
-        fullness = clamp(fullness - 2)
-        energy = clamp(energy - 1)
         if (fullness > 40 && poops < 3 && rnd.nextInt(100) < 15) poops++
-        hygiene = clamp(hygiene - 1 - 4 * poops)
-        if (weight > 50) energy = clamp(energy - 1)  // overweight = sluggish
-        if (weight > 0 && ageMinutes % 3 == 0L) weight--
-
-        var dJoy = -1
-        if (fullness < 30) dJoy -= 2
-        if (hygiene < 30) dJoy -= 2
-        joy = clamp(joy + dJoy)
+        awakeDrain()
 
         if (mistakeCooldown > 0) mistakeCooldown--
         if (lowestStat <= 10 && mistakeCooldown == 0) {
@@ -157,8 +179,11 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
         }
     }
 
-    /** Away from the home screen: merciful catch-up, same as the board's offline progression. */
-    private fun catchUp(mins: Long) {
+    /**
+     * Time away from the home screen runs by the same clock (so the alerts are
+     * honest), minus the random poops and the care mistakes.
+     */
+    private fun catchUp(mins: Long, nowMs: Long) {
         for (i in 0 until mins) {
             ageMinutes++
             if (isEgg) {
@@ -166,20 +191,66 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
                 continue
             }
             if (sleeping) {
-                energy = clamp(energy + 6)
-                if (ageMinutes % 2 == 0L) {
-                    fullness = dropTo(fullness, 1, 30)
-                    joy = dropTo(joy, 1, 35)
-                }
-                if (ageMinutes % 3 == 0L) hygiene = dropTo(hygiene, 1, 45)
+                energy = clamp(energy + 20)  // = +1 every 3 s
+                sleepDrain()
+                if (energy >= 100) wakeUp(nowMs)
                 continue
             }
-            fullness = dropTo(fullness, 2, 15)
-            energy = dropTo(energy, 1, 15)
-            hygiene = dropTo(hygiene, 1, 15)
-            joy = dropTo(joy, 1, 15)
+            awakeDrain()
         }
         if (!isEgg && !sleeping) poops = minOf(3, poops + (mins / 240).toInt())
+    }
+
+    // ---- alerts (shown as phone notifications) ----
+
+    enum class Event { WOKE_UP, HUNGRY, LONELY }
+
+    private val events = ArrayList<Event>()
+
+    /** Alerts raised since the last call; the caller turns them into notifications. */
+    fun drainEvents(): List<Event> = events.toList().also { events.clear() }
+
+    private fun checkAlerts(nowMs: Long): Boolean {
+        if (isEgg || awaitingStarter) return false
+        var changed = false
+        if (fullness <= HUNGRY_AT) {
+            if (!hungryNotified) {
+                hungryNotified = true
+                events.add(Event.HUNGRY)
+                changed = true
+            }
+        } else if (hungryNotified) {
+            hungryNotified = false  // fed again: warn again next time
+            changed = true
+        }
+        if (!sleeping && !lonelyNotified && nowMs - lastInteractionMs >= LONELY_MS) {
+            lonelyNotified = true
+            events.add(Event.LONELY)
+            changed = true
+        }
+        return changed
+    }
+
+    /** When the next alert could fire, so a background alarm can check on the pet then. */
+    fun nextAlertAt(nowMs: Long = System.currentTimeMillis()): Long? {
+        if (isEgg || awaitingStarter) return null
+        val times = ArrayList<Long>()
+        if (sleeping) {
+            times += nowMs + (100 - energy).coerceAtLeast(1) * REST_STEP_MS
+        } else {
+            if (!hungryNotified) {
+                val mins = ((fullness - HUNGRY_AT).coerceAtLeast(0) * 3 + 4) / 5  // 5 FOOD per 3 min
+                times += nowMs + mins * TICK_MS
+            }
+            if (!lonelyNotified) times += lastInteractionMs + LONELY_MS
+        }
+        return times.minOrNull()?.coerceAtLeast(nowMs + 30_000)
+    }
+
+    /** Any care from the player resets the loneliness timer. */
+    private fun interacted() {
+        lastInteractionMs = System.currentTimeMillis()
+        lonelyNotified = false
     }
 
     // ---- life cycle ----
@@ -239,6 +310,9 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
     }
 
     private fun hatch() {
+        lastInteractionMs = System.currentTimeMillis()
+        lonelyNotified = false
+        hungryNotified = false
         speciesId = eggTarget
         shiny = eggShiny
         berryKnown = false
@@ -290,6 +364,7 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
 
     fun feedBerry(color: Int) {
         if (isEgg || sleeping) return
+        interacted()
         if (lovesBerry(color)) {
             fullness = clamp(fullness + 35)
             joy = clamp(joy + 10)
@@ -305,6 +380,7 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
 
     fun feedCandy() {
         if (isEgg || sleeping) return
+        interacted()
         fullness = clamp(fullness + 10)
         joy = clamp(joy + 12)
         weight = clamp(weight + 12)
@@ -314,6 +390,7 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
 
     fun play() {
         if (isEgg || sleeping) return
+        interacted()
         joy = clamp(joy + 25)
         energy = clamp(energy - 10)
         fullness = clamp(fullness - 5)
@@ -324,6 +401,7 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
     }
 
     fun clean() {
+        interacted()
         poops = 0
         hygiene = 100
         bond = clamp(bond + 1)
@@ -334,11 +412,13 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
         if (isEgg) return
         sleeping = !sleeping
         lastRestMs = System.currentTimeMillis()
+        interacted()
         save()
     }
 
     fun caress() {
         if (isEgg || sleeping) return
+        interacted()
         joy = clamp(joy + 5)
         heart()
         bond = clamp(bond + 1)
@@ -381,6 +461,8 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
             .putBoolean("eggShiny", eggShiny).putInt("mistakeCd", mistakeCooldown)
             .putLong("lastTick", lastTickMs).putInt("evoDeclined", evoDeclinedLv)
             .putString("dex", registered.joinToString(","))
+            .putLong("lastTouch", lastInteractionMs)
+            .putBoolean("lonelySent", lonelyNotified).putBoolean("hungrySent", hungryNotified)
             .apply()
     }
 
@@ -405,6 +487,9 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
         mistakeCooldown = prefs.getInt("mistakeCd", 0)
         lastTickMs = prefs.getLong("lastTick", 0)
         evoDeclinedLv = prefs.getInt("evoDeclined", 0)
+        lastInteractionMs = prefs.getLong("lastTouch", System.currentTimeMillis())
+        lonelyNotified = prefs.getBoolean("lonelySent", false)
+        hungryNotified = prefs.getBoolean("hungrySent", false)
         registered.clear()
         prefs.getString("dex", "")!!.split(',').mapNotNullTo(registered) { it.toIntOrNull() }
     }
@@ -413,7 +498,9 @@ class Pet(private val prefs: SharedPreferences, private val rnd: Random = Random
 
     companion object {
         const val TICK_MS = 60_000L
-        const val REST_STEP_MS = 10_000L
+        const val REST_STEP_MS = 3_000L
+        const val LONELY_MS = 15 * 60_000L
+        const val HUNGRY_AT = 25
         const val MINUTES_PER_LEVEL = 60
         const val EAT_ANIM_MS = 2500L
         const val HEART_MS = 1500L
